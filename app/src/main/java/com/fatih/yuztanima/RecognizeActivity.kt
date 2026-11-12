@@ -26,7 +26,10 @@ class RecognizeActivity : AppCompatActivity() {
 
         private const val MATCH_FRAMES = 3          // Aynı kişi art arda kaç karede eşleşmeli
         private const val UNKNOWN_FRAMES = 12       // Kaç karede eşleşmezse "Tanınmadı"
-        private const val LIVENESS_TIMEOUT_MS = 10_000L
+        private const val LIVENESS_TIMEOUT_MS = 15_000L
+        private const val BLINK_HINT_MS = 5_000L
+        /** Göz kırpma: gözlük vb. için mutlak değer değil, açık-kapalı farkına bakılır. */
+        private const val BLINK_RANGE = 0.28f
     }
 
     private enum class State { LOADING, SEARCHING, DONE }
@@ -53,8 +56,9 @@ class RecognizeActivity : AppCompatActivity() {
     private var streak = 0
     private var unknownCount = 0
     private var bestSim = 0f
-    private var sawEyesOpen = false
-    private var sawEyesClosed = false
+    private var lockedFrames = 0
+    private var blinkMin = 1f
+    private var blinkMax = 0f
     private var recognizedAt = 0L
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -97,8 +101,9 @@ class RecognizeActivity : AppCompatActivity() {
         streak = 0
         unknownCount = 0
         bestSim = 0f
-        sawEyesOpen = false
-        sawEyesClosed = false
+        lockedFrames = 0
+        blinkMin = 1f
+        blinkMax = 0f
         recognizedAt = 0L
         panel.visibility = View.GONE
         ring.ringColor = ContextCompat.getColor(this, R.color.accent)
@@ -119,12 +124,38 @@ class RecognizeActivity : AppCompatActivity() {
         val crop = frame.aligned ?: run { status("Biraz daha yaklaşın"); return }
         if (frame.size < 0.22f) { status("Biraz daha yaklaşın"); return }
 
-        // Sessiz canlılık: gözlerin hem açık hem kapalı görüldüğü an = doğal göz kırpma
-        if (frame.eyesClosed < 0.25f) sawEyesOpen = true
-        if (frame.eyesClosed > 0.55f) sawEyesClosed = true
-        val alive = !REQUIRE_LIVENESS || (sawEyesOpen && sawEyesClosed)
+        // Sessiz canlılık: gözlerin açık/kapalı skoru arasında belirgin fark = doğal göz kırpma
+        if (frame.eyesClosed < blinkMin) blinkMin = frame.eyesClosed
+        if (frame.eyesClosed > blinkMax) blinkMax = frame.eyesClosed
+        val alive = !REQUIRE_LIVENESS || (blinkMax - blinkMin >= BLINK_RANGE && blinkMax >= 0.30f)
 
-        if (frame.eyesClosed > 0.55f) return // gözler kapalıyken imza çıkarma
+        // Kişi tanındıysa ve sadece göz kırpması bekleniyorsa, imza çıkarmayı atla:
+        // kareler hızlanır, kısa göz kırpmaları kaçmaz.
+        val locked = candidate
+        if (streak >= MATCH_FRAMES && locked != null) {
+            // Her 4 karede bir yüzün hâlâ aynı kişi olduğunu kontrol et
+            lockedFrames++
+            if (lockedFrames % 4 == 0 && frame.eyesClosed < 0.5f) {
+                val again = eng.findBest(eng.embedding(crop), people).person
+                if (again?.id != locked.id) { streak = 0; candidate = null; lockedFrames = 0; recognizedAt = 0L; return }
+            }
+            if (alive) {
+                state = State.DONE
+                val sim = bestSim
+                runOnUiThread { showSuccess(locked, sim) }
+                return
+            }
+            if (recognizedAt == 0L) recognizedAt = System.currentTimeMillis()
+            val waited = System.currentTimeMillis() - recognizedAt
+            if (waited > LIVENESS_TIMEOUT_MS) {
+                state = State.DONE
+                runOnUiThread { showFailure("Canlı yüz doğrulanamadı.\nFotoğraf veya ekran kullanılamaz.") }
+            } else status(if (waited > BLINK_HINT_MS) "Doğal şekilde göz kırpın" else "Doğrulanıyor…")
+            runOnUiThread { if (state == State.SEARCHING) ring.progress = 0.85f }
+            return
+        }
+
+        if (frame.eyesClosed > 0.5f) return // gözler kapalıyken imza çıkarma
         val frontal = frame.yaw in 0.3f..0.7f
 
         val match = eng.findBest(eng.embedding(crop), people)
@@ -150,10 +181,7 @@ class RecognizeActivity : AppCompatActivity() {
             }
             streak >= MATCH_FRAMES && current != null -> {
                 if (recognizedAt == 0L) recognizedAt = System.currentTimeMillis()
-                if (System.currentTimeMillis() - recognizedAt > LIVENESS_TIMEOUT_MS) {
-                    state = State.DONE
-                    runOnUiThread { showFailure("Canlı yüz doğrulanamadı.\nFotoğraf veya ekran kullanılamaz.") }
-                } else status("Doğrulanıyor…")
+                status("Doğrulanıyor…")
             }
             unknownCount >= UNKNOWN_FRAMES -> {
                 state = State.DONE

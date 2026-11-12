@@ -25,7 +25,7 @@ data class FaceFrame(
     val faceCount: Int,
     val aligned: Bitmap?,       // Gözler yatay, 112x112 hizalanmış yüz (tek yüz varsa)
     val yaw: Float,             // 0.5 = tam karşıya bakıyor; küçük/büyük = yana dönük
-    val eyesClosed: Float,      // 0..1, iki gözün kapalılık skoru (göz kırpma)
+    val eyesClosed: Float,      // 0..1, iki gözün ortalama kapalılık skoru (göz kırpma)
     val cx: Float,              // Yüz merkezi (0..1, görüntü genişliğine oranla)
     val cy: Float,              // Yüz merkezi (0..1, görüntü yüksekliğine oranla)
     val size: Float             // Yüz genişliği / görüntü genişliği
@@ -143,7 +143,7 @@ class FaceEngine(context: Context) {
             faceCount = 1,
             aligned = aligned,
             yaw = yaw,
-            eyesClosed = min(blinkL, blinkR),
+            eyesClosed = (blinkL + blinkR) / 2f,
             cx = (minX + maxX) / 2f,
             cy = (minY + maxY) / 2f,
             size = maxX - minX
