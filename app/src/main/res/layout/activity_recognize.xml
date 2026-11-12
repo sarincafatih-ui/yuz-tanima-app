@@ -11,18 +11,14 @@
         android:layout_height="match_parent"
         app:scaleType="fillCenter" />
 
-    <View
-        android:id="@+id/faceOval"
-        android:layout_width="170dp"
-        android:layout_height="220dp"
-        android:layout_gravity="center_horizontal"
-        android:layout_marginTop="150dp"
-        android:background="@drawable/oval_dashed" />
+    <com.fatih.yuztanima.FaceRingView
+        android:id="@+id/ring"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:background="@drawable/bg_scrim"
         android:orientation="vertical"
         android:paddingStart="24dp"
         android:paddingTop="40dp"
@@ -46,6 +42,14 @@
             android:text="Kameraya bakın…"
             android:textColor="@color/text_soft"
             android:textSize="16sp" />
+
+        <TextView
+            android:id="@+id/txtDebug"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:textColor="@color/muted"
+            android:textSize="12sp" />
     </LinearLayout>
 
     <LinearLayout

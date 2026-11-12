@@ -9,7 +9,6 @@ import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.camera.view.PreviewView
 import androidx.core.content.ContextCompat
-import com.google.android.material.button.MaterialButton
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -37,7 +36,8 @@ class RecognizeActivity : AppCompatActivity() {
     private var people: List<Person> = emptyList()
 
     private lateinit var txtStatus: TextView
-    private lateinit var faceOval: View
+    private lateinit var ring: FaceRingView
+    private lateinit var txtDebug: TextView
     private lateinit var panel: View
     private lateinit var iconCircle: FrameLayout
     private lateinit var imgResult: ImageView
@@ -46,7 +46,7 @@ class RecognizeActivity : AppCompatActivity() {
     private lateinit var txtResultName: TextView
     private lateinit var txtResultInfo: TextView
     private lateinit var btnRetry: View
-    private lateinit var btnDone: MaterialButton
+    private lateinit var btnDone: com.google.android.material.button.MaterialButton
 
     @Volatile private var state = State.LOADING
     private var candidate: Person? = null
@@ -62,7 +62,8 @@ class RecognizeActivity : AppCompatActivity() {
         setContentView(R.layout.activity_recognize)
 
         txtStatus = findViewById(R.id.txtStatus)
-        faceOval = findViewById(R.id.faceOval)
+        ring = findViewById(R.id.ring)
+        txtDebug = findViewById(R.id.txtDebug)
         panel = findViewById(R.id.panelResult)
         iconCircle = findViewById(R.id.iconCircle)
         imgResult = findViewById(R.id.imgResult)
@@ -100,7 +101,9 @@ class RecognizeActivity : AppCompatActivity() {
         sawEyesClosed = false
         recognizedAt = 0L
         panel.visibility = View.GONE
-        faceOval.setBackgroundResource(R.drawable.oval_dashed)
+        ring.ringColor = ContextCompat.getColor(this, R.color.accent)
+        ring.progress = 0f
+        txtDebug.text = ""
         txtStatus.text = "Kameraya bakın…"
         state = State.SEARCHING
     }
@@ -113,7 +116,8 @@ class RecognizeActivity : AppCompatActivity() {
         val frame = eng.analyze(bitmap)
         if (frame.faceCount == 0) { status("Kameraya bakın…"); streak = 0; return }
         if (frame.faceCount > 1) { status("Kadrajda sadece bir kişi olmalı"); streak = 0; return }
-        val crop = frame.crop ?: run { status("Biraz daha yaklaşın"); return }
+        val crop = frame.aligned ?: run { status("Biraz daha yaklaşın"); return }
+        if (frame.size < 0.22f) { status("Biraz daha yaklaşın"); return }
 
         // Sessiz canlılık: gözlerin hem açık hem kapalı görüldüğü an = doğal göz kırpma
         if (frame.eyesClosed < 0.25f) sawEyesOpen = true
@@ -125,6 +129,9 @@ class RecognizeActivity : AppCompatActivity() {
 
         val match = eng.findBest(eng.embedding(crop), people)
         val person = match.person
+        val near = match.nearest
+        val dbg = if (near != null) "En yakın: ${near.fullName} · %${(match.similarity * 100).toInt()} (eşik %${(FaceEngine.MATCH_THRESHOLD * 100).toInt()})" else ""
+        runOnUiThread { txtDebug.text = dbg }
         if (person != null) {
             unknownCount = 0
             if (person.id == candidate?.id) streak++ else { candidate = person; streak = 1; bestSim = 0f }
@@ -154,12 +161,15 @@ class RecognizeActivity : AppCompatActivity() {
             }
             else -> status("Doğrulanıyor…")
         }
+        val p = (streak.coerceAtMost(MATCH_FRAMES).toFloat() / MATCH_FRAMES) * (if (alive) 1f else 0.85f)
+        runOnUiThread { if (state == State.SEARCHING) ring.progress = p }
     }
 
     private fun status(text: String) = runOnUiThread { txtStatus.text = text }
 
     private fun showSuccess(person: Person, similarity: Float) {
-        faceOval.setBackgroundResource(R.drawable.oval_solid)
+        ring.ringColor = ContextCompat.getColor(this, R.color.accent)
+        ring.progress = 1f
         txtStatus.text = "Yüz eşleşti ✓"
         iconCircle.setBackgroundResource(R.drawable.bg_circle_success)
         imgResult.setImageResource(R.drawable.ic_check)
@@ -176,7 +186,8 @@ class RecognizeActivity : AppCompatActivity() {
     }
 
     private fun showFailure(message: String) {
-        faceOval.setBackgroundResource(R.drawable.oval_error)
+        ring.ringColor = ContextCompat.getColor(this, R.color.error_ring)
+        ring.progress = 1f
         txtStatus.text = "Eşleşme yok"
         iconCircle.setBackgroundResource(R.drawable.bg_circle_error)
         imgResult.setImageResource(R.drawable.ic_close)

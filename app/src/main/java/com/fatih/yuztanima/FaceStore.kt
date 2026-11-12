@@ -25,7 +25,7 @@ data class Person(
  */
 object FaceStore {
     private const val PREFS = "yuz_tanima"
-    private const val KEY = "people"
+    private const val KEY = "people_v2" // v2: hizalanmış yüz imzaları
 
     fun all(context: Context): List<Person> {
         val raw = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY, null)
