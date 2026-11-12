@@ -1,0 +1,12 @@
+*.iml
+.gradle/
+/local.properties
+.idea/
+.DS_Store
+build/
+/captures
+.externalNativeBuild
+.cxx
+# Modeller derleme sırasında otomatik indirilir
+app/src/main/assets/*.task
+app/src/main/assets/*.tflite

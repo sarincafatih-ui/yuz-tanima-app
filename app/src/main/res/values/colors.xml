@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="bg">#0B1730</color>
+    <color name="card">#12234A</color>
+    <color name="card_border">#2C4470</color>
+    <color name="avatar">#23396A</color>
+    <color name="avatar_text">#CFE0FF</color>
+    <color name="accent">#3EE6A5</color>
+    <color name="on_accent">#04122A</color>
+    <color name="text">#F2F5FA</color>
+    <color name="text_soft">#DCE4F0</color>
+    <color name="muted">#9FB0CC</color>
+    <color name="sheet">#F6F8FB</color>
+    <color name="sheet_text">#0B1730</color>
+    <color name="sheet_muted">#4A5872</color>
+    <color name="success">#0A7A50</color>
+    <color name="error">#B71C1C</color>
+    <color name="error_soft">#FFE1E1</color>
+    <color name="error_icon">#C62828</color>
+    <color name="error_ring">#FF6B6B</color>
+    <color name="track">#1E3260</color>
+</resources>
