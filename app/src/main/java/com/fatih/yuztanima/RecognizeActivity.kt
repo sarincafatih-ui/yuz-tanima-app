@@ -19,8 +19,8 @@ class RecognizeActivity : AppCompatActivity() {
 
     companion object {
         /**
-         * Sessiz canlılık kontrolü: kişiye hiçbir şey söylenmeden doğal göz kırpması beklenir.
-         * Basılı fotoğrafla açılmayı engeller. Kapatmak için false yapın.
+         * Sessiz canlılık kontrolü: doğal göz kırpma + sahte yüz tespiti (MiniFASNet).
+         * Kişiden hareket istenmez. Kapatmak için false yapın.
          */
         const val REQUIRE_LIVENESS = true
 
@@ -36,6 +36,8 @@ class RecognizeActivity : AppCompatActivity() {
 
     private lateinit var executor: ExecutorService
     private var engine: FaceEngine? = null
+    private var antiSpoof: AntiSpoof? = null
+    private val realScores = ArrayDeque<Float>()
     private var people: List<Person> = emptyList()
 
     private lateinit var txtStatus: TextView
@@ -88,6 +90,7 @@ class RecognizeActivity : AppCompatActivity() {
         executor.execute {
             try {
                 engine = FaceEngine(this)
+                antiSpoof = AntiSpoof(this)
                 runOnUiThread { reset() }
             } catch (e: Exception) {
                 runOnUiThread { txtStatus.text = "Model yüklenemedi: ${e.message}" }
@@ -104,6 +107,7 @@ class RecognizeActivity : AppCompatActivity() {
         lockedFrames = 0
         blinkMin = 1f
         blinkMax = 0f
+        realScores.clear()
         recognizedAt = 0L
         panel.visibility = View.GONE
         ring.ringColor = ContextCompat.getColor(this, R.color.accent)
@@ -127,9 +131,23 @@ class RecognizeActivity : AppCompatActivity() {
         // Sessiz canlılık: gözlerin açık/kapalı skoru arasında belirgin fark = doğal göz kırpma
         if (frame.eyesClosed < blinkMin) blinkMin = frame.eyesClosed
         if (frame.eyesClosed > blinkMax) blinkMax = frame.eyesClosed
-        val alive = !REQUIRE_LIVENESS || (blinkMax - blinkMin >= BLINK_RANGE && blinkMax >= 0.30f)
+        val blinked = blinkMax - blinkMin >= BLINK_RANGE && blinkMax >= 0.30f
 
-        // Kişi tanındıysa ve sadece göz kırpması bekleniyorsa, imza çıkarmayı atla:
+        // Sahte yüz tespiti (MiniFASNet): son 10 karenin ortalaması
+        val fas = antiSpoof ?: return
+        val real = fas.realScore(bitmap, frame.boxLeft, frame.boxTop, frame.boxWidth, frame.boxHeight)
+        realScores.addLast(real)
+        if (realScores.size > 10) realScores.removeFirst()
+        val avgReal = realScores.average().toFloat()
+        val realOk = realScores.size >= 5 && avgReal >= AntiSpoof.REAL_THRESHOLD
+        if (REQUIRE_LIVENESS && realScores.size >= 10 && avgReal < 0.30f) {
+            state = State.DONE
+            runOnUiThread { showFailure("Sahte görüntü algılandı.\nEkran, video veya fotoğraf kullanılamaz.") }
+            return
+        }
+        val alive = !REQUIRE_LIVENESS || (blinked && realOk)
+
+        // Kişi tanındıysa ve sadece canlılık bekleniyorsa, imza çıkarmayı atla:
         // kareler hızlanır, kısa göz kırpmaları kaçmaz.
         val locked = candidate
         if (streak >= MATCH_FRAMES && locked != null) {
@@ -149,9 +167,12 @@ class RecognizeActivity : AppCompatActivity() {
             val waited = System.currentTimeMillis() - recognizedAt
             if (waited > LIVENESS_TIMEOUT_MS) {
                 state = State.DONE
-                runOnUiThread { showFailure("Canlı yüz doğrulanamadı.\nFotoğraf veya ekran kullanılamaz.") }
-            } else status(if (waited > BLINK_HINT_MS) "Doğal şekilde göz kırpın" else "Doğrulanıyor…")
-            runOnUiThread { if (state == State.SEARCHING) ring.progress = 0.85f }
+                val msg = if (blinked) "Sahte görüntü algılandı.\nEkran, video veya fotoğraf kullanılamaz."
+                          else "Canlı yüz doğrulanamadı.\nFotoğraf veya ekran kullanılamaz."
+                runOnUiThread { showFailure(msg) }
+            } else status(if (waited > BLINK_HINT_MS && !blinked) "Doğal şekilde göz kırpın" else "Doğrulanıyor…")
+            val dbgLocked = "${locked.fullName} · Canlılık %${(avgReal * 100).toInt()} (eşik %${(AntiSpoof.REAL_THRESHOLD * 100).toInt()}) · Göz kırpma ${if (blinked) "✓" else "bekleniyor"}"
+            runOnUiThread { txtDebug.text = dbgLocked; if (state == State.SEARCHING) ring.progress = 0.85f }
             return
         }
 
@@ -161,7 +182,7 @@ class RecognizeActivity : AppCompatActivity() {
         val match = eng.findBest(eng.embedding(crop), people)
         val person = match.person
         val near = match.nearest
-        val dbg = if (near != null) "En yakın: ${near.fullName} · %${(match.similarity * 100).toInt()} (eşik %${(FaceEngine.MATCH_THRESHOLD * 100).toInt()})" else ""
+        val dbg = if (near != null) "En yakın: ${near.fullName} · %${(match.similarity * 100).toInt()} (eşik %${(FaceEngine.MATCH_THRESHOLD * 100).toInt()}) · Canlılık %${(avgReal * 100).toInt()}" else ""
         runOnUiThread { txtDebug.text = dbg }
         if (person != null) {
             unknownCount = 0
@@ -231,7 +252,7 @@ class RecognizeActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
-        executor.execute { engine?.close(); engine = null }
+        executor.execute { engine?.close(); engine = null; antiSpoof?.close(); antiSpoof = null }
         executor.shutdown()
     }
 }

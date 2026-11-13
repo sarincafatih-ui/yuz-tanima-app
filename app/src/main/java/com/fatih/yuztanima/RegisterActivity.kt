@@ -9,6 +9,7 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.camera.view.PreviewView
+import androidx.core.content.ContextCompat
 import com.google.android.material.button.MaterialButton
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
@@ -20,6 +21,7 @@ import kotlin.math.abs
  *  2) Başını yavaşça SAĞA çevir
  *  3) Başını yavaşça SOLA çevir
  *  4) Tekrar DÜZ bak                    → halka tamamlanır, kayıt biter
+ * Düz bakılan örneklerde sahte yüz tespiti (MiniFASNet) yapılır; ekran/fotoğrafla kayıt reddedilir.
  */
 class RegisterActivity : AppCompatActivity() {
 
@@ -37,6 +39,8 @@ class RegisterActivity : AppCompatActivity() {
 
     private lateinit var executor: ExecutorService
     private var engine: FaceEngine? = null
+    private var antiSpoof: AntiSpoof? = null
+    private val realScores = mutableListOf<Float>()
 
     private lateinit var ring: FaceRingView
     private lateinit var txtInstruction: TextView
@@ -77,6 +81,7 @@ class RegisterActivity : AppCompatActivity() {
         executor.execute {
             try {
                 engine = FaceEngine(this)
+                antiSpoof = AntiSpoof(this)
                 runOnUiThread {
                     btnSave.isEnabled = true
                     txtInstruction.text = "Ad ve soyadı yazın"
@@ -102,6 +107,7 @@ class RegisterActivity : AppCompatActivity() {
             .hideSoftInputFromWindow(editSurname.windowToken, 0)
         formPanel.visibility = View.GONE
         synchronized(samples) { samples.clear() }
+        realScores.clear()
         ring.progress = 0f
         firstSideHigh = null
         goTo(Step.FRONT)
@@ -174,6 +180,10 @@ class RegisterActivity : AppCompatActivity() {
         lastSampleAt = now
 
         val emb = eng.embedding(aligned!!)
+        // Sahte yüz tespiti sadece düz bakılan örneklerde (model önden yüzle eğitildi)
+        if (s == Step.FRONT || s == Step.FRONT2) {
+            antiSpoof?.let { realScores.add(it.realScore(bitmap, f.boxLeft, f.boxTop, f.boxWidth, f.boxHeight)) }
+        }
         val total = synchronized(samples) { samples.add(emb); samples.size }
         stepCount++
         runOnUiThread {
@@ -195,6 +205,18 @@ class RegisterActivity : AppCompatActivity() {
     private fun finishScan(eng: FaceEngine) {
         step = Step.DONE
         val list = synchronized(samples) { samples.toList() }
+        val avgReal = if (realScores.isEmpty()) 1f else realScores.average().toFloat()
+        if (avgReal < AntiSpoof.REAL_THRESHOLD) {
+            runOnUiThread {
+                ring.ringColor = ContextCompat.getColor(this, R.color.error_ring)
+                ring.progress = 1f
+                txtStep.text = ""
+                txtInstruction.text = "Sahte görüntü algılandı"
+                txtHint.text = "Kayıt yapılmadı (canlılık %${(avgReal * 100).toInt()}). Ekran, video veya fotoğraf kullanılamaz."
+                ring.postDelayed({ finish() }, 3000)
+            }
+            return
+        }
         val existing = eng.findBest(list[0], FaceStore.all(this)).person
         FaceStore.add(this, name, surname, list)
         runOnUiThread {
@@ -211,7 +233,7 @@ class RegisterActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
-        executor.execute { engine?.close(); engine = null }
+        executor.execute { engine?.close(); engine = null; antiSpoof?.close(); antiSpoof = null }
         executor.shutdown()
     }
 }

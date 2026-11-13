@@ -28,7 +28,11 @@ data class FaceFrame(
     val eyesClosed: Float,      // 0..1, iki gözün ortalama kapalılık skoru (göz kırpma)
     val cx: Float,              // Yüz merkezi (0..1, görüntü genişliğine oranla)
     val cy: Float,              // Yüz merkezi (0..1, görüntü yüksekliğine oranla)
-    val size: Float             // Yüz genişliği / görüntü genişliği
+    val size: Float,            // Yüz genişliği / görüntü genişliği
+    val boxLeft: Float = 0f,    // Yüz kutusu (piksel) — sahte yüz tespiti için
+    val boxTop: Float = 0f,
+    val boxWidth: Float = 0f,
+    val boxHeight: Float = 0f
 )
 
 data class MatchResult(val person: Person?, val similarity: Float, val nearest: Person?)
@@ -146,7 +150,11 @@ class FaceEngine(context: Context) {
             eyesClosed = (blinkL + blinkR) / 2f,
             cx = (minX + maxX) / 2f,
             cy = (minY + maxY) / 2f,
-            size = maxX - minX
+            size = maxX - minX,
+            boxLeft = minX * w,
+            boxTop = minY * h,
+            boxWidth = (maxX - minX) * w,
+            boxHeight = (maxY - minY) * h
         )
     }
 
