@@ -7,6 +7,7 @@ build/
 /captures
 .externalNativeBuild
 .cxx
-# Modeller derleme sırasında otomatik indirilir
+# Modeller derleme sırasında otomatik indirilir / üretilir
 app/src/main/assets/*.task
 app/src/main/assets/*.tflite
+app/src/main/assets/*.onnx

@@ -15,6 +15,9 @@ android {
         targetSdk = 34
         versionCode = 1
         versionName = "1.0"
+
+        // Sadece telefonlarda kullanılan işlemciler (APK boyutunu küçültür)
+        ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
     }
 
     buildTypes {
@@ -33,7 +36,7 @@ android {
 
     // Model dosyaları sıkıştırılmamalı (TFLite / MediaPipe doğrudan bellekten okur)
     androidResources {
-        noCompress += listOf("tflite", "task")
+        noCompress += listOf("tflite", "task", "onnx")
     }
 }
 
@@ -53,6 +56,8 @@ dependencies {
     implementation("com.google.mediapipe:tasks-vision:0.10.14")
     // Açık kaynak: MobileFaceNet yüz imzası (Apache 2.0)
     implementation("org.tensorflow:tensorflow-lite:2.14.0")
+    // Açık kaynak: sahte yüz tespiti (MiniFASNet) modellerini çalıştırmak için (MIT)
+    implementation("com.microsoft.onnxruntime:onnxruntime-android:1.19.2")
 }
 
 // ---- Açık kaynak modelleri derleme öncesi otomatik indir ----
@@ -80,4 +85,15 @@ val downloadModels by tasks.registering {
     }
 }
 
-tasks.named("preBuild") { dependsOn(downloadModels) }
+// Sahte yüz tespiti (MiniFASNet) modellerini açık kaynak ağırlıklardan .onnx olarak üret
+val prepareAntiSpoof by tasks.registering(Exec::class) {
+    val assetsDir = file("src/main/assets")
+    onlyIf {
+        !File(assetsDir, "2.7_80x80_MiniFASNetV2.onnx").exists() ||
+            !File(assetsDir, "4_0_0_80x80_MiniFASNetV1SE.onnx").exists()
+    }
+    workingDir = rootDir
+    commandLine("bash", "tools/prepare_antispoof.sh", assetsDir.absolutePath)
+}
+
+tasks.named("preBuild") { dependsOn(downloadModels, prepareAntiSpoof) }
